@@ -4,6 +4,46 @@
 const k8s = require('@kubernetes/client-node');
 var submitK8sJob = require('./k8sJobSubmit.js').submitK8sJob;
 var fs = require('fs');
+const PromisePool = require('@supercharge/promise-pool');
+var path = require('path');
+
+function copyFileSync( source, target ) {
+
+  var targetFile = target;
+
+  //if target is a directory a new file with the same name will be created
+  if ( fs.existsSync( target ) ) {
+    if ( fs.lstatSync( target ).isDirectory() ) {
+      targetFile = path.join( target, path.basename( source ) );
+    }
+  }
+
+  fs.writeFileSync(targetFile, fs.readFileSync(source));
+}
+
+function copyFolderRecursiveSync( source, target ) {
+  var files = [];
+
+  //check if folder needs to be created or integrated
+  var targetFolder = path.join( target, path.basename( source ) );
+  if ( !fs.existsSync( targetFolder ) ) {
+    fs.mkdirSync( targetFolder );
+  }
+
+  //copy
+  if ( fs.lstatSync( source ).isDirectory() ) {
+    files = fs.readdirSync( source );
+    files.forEach( function ( file ) {
+      var curSource = path.join( source, file );
+      if ( fs.lstatSync( curSource ).isDirectory() ) {
+        copyFolderRecursiveSync( curSource, targetFolder );
+      } else {
+        copyFileSync( curSource, targetFolder );
+      }
+    } );
+  }
+}
+
 
 async function bojK8sCommand(ins, outs, context, cb) {
   let functionStart = Date.now();
@@ -18,54 +58,110 @@ async function bojK8sCommand(ins, outs, context, cb) {
   var remoteClusterId = process.env.HF_VAR_REMOTE_CLUSTER;
   if (remoteClusterId) {
     let partition = job.partition;
-    if (partition == remoteClusterId) {
+    if (partition === remoteClusterId) {
       // this will cause reading the kube_config of the remote cluster
       process.env.KUBECONFIG = process.env.HF_VAR_KUBE_CONFIG_PATH || "./kube_config";
     }
   }
 
-  const kubeconfig = new k8s.KubeConfig();
-  kubeconfig.loadFromDefault(); // loadFromString(JSON.stringify(kconfig))
+  const text = fs.readFileSync("/hyperflow/examples/BagOfJobs/commandType");
 
-  let jobsFileName = ins["jobSetsFile"].data[0];
-  let jobs = JSON.parse(fs.readFileSync(jobsFileName));
+  if (text.startsWith("bagOfJobs")) {
+    const kubeconfig = new k8s.KubeConfig();
+    kubeconfig.loadFromDefault();
 
-  // run job sets in parallel with concurrency limit
-  const PromisePool = require('@supercharge/promise-pool');
-  const { results, errors } = await PromisePool
-    .for(jobs)
-    .withConcurrency(5)
-    .process(async jobs => {
-      jobPromises = jobs.map(job => {
-        //let taskId = job.name + "-" + jsetIdx + "-" + jIdx;
-        let taskId = job.name;
-        let customParams = {};
+    let jobsFileName = ins["jobSetsFile"].data[0];
+    let jobs = JSON.parse(fs.readFileSync(jobsFileName));
+
+    const k8sApi = kubeconfig.makeApiClient(k8s.CoreV1Api);
+
+    // get all nodes
+    const nodesResponse = await k8sApi.listNode('default');
+    const nodes = nodesResponse.body.items;
+    const numberOfNodes = nodes.length;
+    const LABEL = "my-label";
+    const headers = {'content-type': 'application/merge-patch+json'};
+
+    // create node selector label for all nodes
+    for (const node of nodes) {
+      const label = {
+        "metadata": {
+          "labels": { }
+        }
+      };
+      label.metadata.labels[LABEL] = node.metadata.name;
+      await k8sApi.patchNode(node.metadata.name, label, undefined, undefined, undefined, undefined, {headers});
+    }
+
+    copyFolderRecursiveSync('/work_dir', "/hyperflow/examples/BagOfJobs");
+
+    // run job sets in parallel with concurrency limit
+    const { results, errors } = await PromisePool
+        .for(jobs)
+        .withConcurrency(numberOfNodes)
+        .process(async jobs => {
+          copyFolderRecursiveSync('/hyperflow/examples/BagOfJobs/work_dir', "/");
+          jobPromises = jobs.map(job => {
+            let taskId = context.hfId + ":" + job.setId + ":" + job.jobId + ":1"
+            let set = parseInt(job.setId);
+            let nodeToSchedule = nodes[set%numberOfNodes];
+            let nodeSelector = nodeToSchedule.metadata.labels[LABEL];
+            let customParams = {
+              jobName: '.job-sets.' + job.name.replace(/_/g, '-') + '.' + job.setId + '.' + job.jobId,
+              labelKey: LABEL,
+              labelValue: nodeSelector,
+              imageName: job.image,
+              firingLimit: job.firingLimit,
+            };
+
+            return submitK8sJob(kubeconfig, job, taskId, context, customParams);
+          });
+          jobExitCodes = await Promise.all(jobPromises);
+          return jobExitCodes;
+        });
+
+    console.log(results, errors);
+  } else {
+    let stepsFileName = ins["jobSetsFile"].data[1];
+    let steps = JSON.parse(fs.readFileSync(stepsFileName));
+
+    jobPromises = []
+
+    for (let i = 0; i < steps.length; i++) {
+      step = steps[i];
+      jobs = step.jobs;
+      jobPromises.append(jobs.map(job => {
+        let taskId = context.hfId + ":" + job.step + ":" + job.job + ":1"
+        let customParams = {
+          jobName: '.job-sets.' + job.name.replace(/_/g, '-') + '.' + job.set + '.' + job.job,
+          imageName: job.image,
+          firingLimit: job.firingLimit,
+          type: job.name + "-" + job.workflow + "-" + job.size,
+          size: 100
+        };
+
         return submitK8sJob(kubeconfig, job, taskId, context, customParams);
-      });
-      jobExitCodes = await Promise.all(jobPromises);
-      return jobExitCodes;
-    });
+      }));
 
-  console.log(results, errors);
-
-  /*
-  jobs.forEach((jobSet, jsetIdx) => {
-    jobSet.forEach(async(job, jIdx) => {
-      let taskId = job.name + "-" + jsetIdx + "-" + jIdx;
-      let customParams = {};
-      let code = await submitK8sJob(job, taskId, context, customParams);
-      if (code == 0) {
-        console.log('Job ' + taskId + ' succeeded!');
-      } else {
-        console.log('Job ' + taskId + ' failed! (Exit code:', code + ')');
-      }
-    });
-  });
-  */
+      console.log("Finished initializing step " + i + " with jobCodes")
+      wait(step.interval * 1000);
+    }
+    jobExitCodes = await Promise.all(jobPromises);
+    console.log("Finished workload with exit codes:")
+    console.log(jobExitCodes);
+  }
 
   let functionEnd = Date.now();
   console.log("[DEBUG] bojK8sInvoke exiting, time:", functionEnd);
   cb(null, outs);
+}
+
+function wait(ms){
+  var start = new Date().getTime();
+  var end = start;
+  while(end < start + ms) {
+    end = new Date().getTime();
+  }
 }
 
 exports.bojK8sCommand = bojK8sCommand;

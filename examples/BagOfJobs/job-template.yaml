@@ -6,9 +6,11 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      nodeSelector:
+        ${labelKey}: ${labelValue}
       containers:
       - name: test
-        image: ${containerName}
+        image: ${imageName}
         env:
           - name: HF_VAR_ENABLE_NETHOGS
             value: "1"

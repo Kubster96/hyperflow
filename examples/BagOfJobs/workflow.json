@@ -4,10 +4,10 @@
         "name": "BojExecutor",
 	"type": "dataflow",
 	"firingLimit": 1,
-        "function": "k8sCommand",
+        "function": "bojK8sCommand",
 	"config": {
 		"executor": {
-			"image": "hyperflowwms/montage-workflow-worker",
+			"image": "hyperflowwms/soykb-workflow-worker",
 			"executable": "echo",
 			"args": ["Hello", "World"],
 			"stdout": "test.stdout"
@@ -18,7 +18,7 @@
     } ],
     "signals": [ {
         "name": "jobSetsFile",
-        "data": [ "job_sets.json" ]
+        "data": [ "job_sets.json", "workload.json" ]
     } ],
     "ins": [ "jobSetsFile" ],
     "outs": [ ]
