@@ -7,6 +7,7 @@ spec:
     spec:
       restartPolicy: Never
       nodeSelector:
+        nodetype: worker
         ${labelKey}: ${labelValue}
       containers:
       - name: test
@@ -15,7 +16,7 @@ spec:
           - name: HF_VAR_ENABLE_NETHOGS
             value: "1"
           - name: HF_VAR_WORK_DIR
-            value: "${volumePath}"
+            value: "/tmp/work_dir"
           - name: HF_VAR_WAIT_FOR_INPUT_FILES
             value: "0"
           - name: HF_VAR_NUM_RETRIES
@@ -24,8 +25,10 @@ spec:
           - "/bin/sh"
           - "-c"
           - >
-            ${command}; exitCode=$? ;
-            if [ $exitCode -ne 0 ]; then echo "Command ${command} returned exit code. $exitCode. Job fails." ; exit 1 ; fi ;
+            cp -R /work_dir /tmp;
+            ${command};
+            exitCode=$?;
+            if [ $exitCode -ne 0 ]; then echo "Command ${command} returned exit code. $exitCode. Job fails." ; exit 1 ; else cp /tmp/work_dir/logs-hf/* /work_dir/logs-hf/ ; fi ;
         workingDir: ${volumePath}
         resources:
           requests:

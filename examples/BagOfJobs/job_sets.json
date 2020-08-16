@@ -1,6 +1,260 @@
 [
   [
     {
+      "name": "select_variants_snp",
+      "function": "{{function}}",
+      "type": "dataflow",
+      "firingLimit": 1,
+      "ins": [
+        "Gmax_275_v2.0.fa.sa",
+        "Gmax_275_v2.0.fa",
+        "Gmax_275_v2.0.fa.amb",
+        "Gmax_275_v2.0.fa.bwt",
+        "Gmax_275_v2.0.fa.ann",
+        "Gmax_275_v2.0.fa.pac",
+        "chromosome.txt",
+        "20180321-083514-All.vcf",
+        "software.tar.gz",
+        "Gmax_275_v2.0.dict",
+        "Gmax_275_v2.0.fa.fai"
+      ],
+      "outs": [
+        "20180321-083514-All.vcf_snp_only.vcf"
+      ],
+      "executable": "gatk-wrapper",
+      "args": [
+        "-T",
+        "SelectVariants",
+        "-nt",
+        "2",
+        "-R",
+        "Gmax_275_v2.0.fa",
+        "-selectType",
+        "SNP",
+        "-V",
+        "20180321-083514-All.vcf",
+        "-o",
+        "20180321-083514-All.vcf_snp_only.vcf"
+      ],
+      "image": "hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf",
+      "workflow": "soykb",
+      "jobId": 0,
+      "setId": 115
+    },
+    {
+      "name": "select_variants_snp",
+      "function": "{{function}}",
+      "type": "dataflow",
+      "firingLimit": 1,
+      "ins": [
+        "Gmax_275_v2.0.fa.sa",
+        "Gmax_275_v2.0.fa",
+        "Gmax_275_v2.0.fa.amb",
+        "Gmax_275_v2.0.fa.bwt",
+        "Gmax_275_v2.0.fa.ann",
+        "Gmax_275_v2.0.fa.pac",
+        "chromosome.txt",
+        "20180321-083514-All.vcf",
+        "software.tar.gz",
+        "Gmax_275_v2.0.dict",
+        "Gmax_275_v2.0.fa.fai"
+      ],
+      "outs": [
+        "20180321-083514-All.vcf_snp_only.vcf"
+      ],
+      "executable": "gatk-wrapper",
+      "args": [
+        "-T",
+        "SelectVariants",
+        "-nt",
+        "2",
+        "-R",
+        "Gmax_275_v2.0.fa",
+        "-selectType",
+        "SNP",
+        "-V",
+        "20180321-083514-All.vcf",
+        "-o",
+        "20180321-083514-All.vcf_snp_only.vcf"
+      ],
+      "image": "hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf",
+      "workflow": "soykb",
+      "jobId": 1,
+      "setId": 115
+    }
+  ],
+  [
+    {
+      "name": "filtering_snp",
+      "function": "{{function}}",
+      "type": "dataflow",
+      "firingLimit": 1,
+      "ins": [
+        "Gmax_275_v2.0.fa.sa",
+        "Gmax_275_v2.0.fa",
+        "Gmax_275_v2.0.fa.amb",
+        "Gmax_275_v2.0.fa.bwt",
+        "Gmax_275_v2.0.fa.ann",
+        "Gmax_275_v2.0.fa.pac",
+        "chromosome.txt",
+        "20180321-083514-All.vcf_snp_only.vcf",
+        "software.tar.gz",
+        "Gmax_275_v2.0.dict",
+        "Gmax_275_v2.0.fa.fai"
+      ],
+      "outs": [
+        "20180321-083514-All_filtered_snp.vcf",
+        "20180321-083514-All_filtered_snp.vcf.idx"
+      ],
+      "executable": "gatk-wrapper",
+      "args": [
+        "-T",
+        "VariantFiltration",
+        "-R",
+        "Gmax_275_v2.0.fa",
+        "-V",
+        "20180321-083514-All.vcf_snp_only.vcf",
+        "--filterExpression",
+        "QD < 2.0 || FS > 60.0 || MQ < 40.0 || Haplotypescore > 20.0",
+        "--filterName",
+        "my_snp_filter",
+        "-o",
+        "20180321-083514-All_filtered_snp.vcf"
+      ],
+      "image": "hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf",
+      "workflow": "soykb",
+      "jobId": 0,
+      "setId": 116
+    },
+    {
+      "name": "filtering_snp",
+      "function": "{{function}}",
+      "type": "dataflow",
+      "firingLimit": 1,
+      "ins": [
+        "Gmax_275_v2.0.fa.sa",
+        "Gmax_275_v2.0.fa",
+        "Gmax_275_v2.0.fa.amb",
+        "Gmax_275_v2.0.fa.bwt",
+        "Gmax_275_v2.0.fa.ann",
+        "Gmax_275_v2.0.fa.pac",
+        "chromosome.txt",
+        "20180321-083514-All.vcf_snp_only.vcf",
+        "software.tar.gz",
+        "Gmax_275_v2.0.dict",
+        "Gmax_275_v2.0.fa.fai"
+      ],
+      "outs": [
+        "20180321-083514-All_filtered_snp.vcf",
+        "20180321-083514-All_filtered_snp.vcf.idx"
+      ],
+      "executable": "gatk-wrapper",
+      "args": [
+        "-T",
+        "VariantFiltration",
+        "-R",
+        "Gmax_275_v2.0.fa",
+        "-V",
+        "20180321-083514-All.vcf_snp_only.vcf",
+        "--filterExpression",
+        "QD < 2.0 || FS > 60.0 || MQ < 40.0 || Haplotypescore > 20.0",
+        "--filterName",
+        "my_snp_filter",
+        "-o",
+        "20180321-083514-All_filtered_snp.vcf"
+      ],
+      "image": "hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf",
+      "workflow": "soykb",
+      "jobId": 1,
+      "setId": 116
+    }
+  ],
+  [
+    {
+      "name": "select_variants_indel",
+      "function": "{{function}}",
+      "type": "dataflow",
+      "firingLimit": 1,
+      "ins": [
+        "Gmax_275_v2.0.fa.sa",
+        "Gmax_275_v2.0.fa",
+        "Gmax_275_v2.0.fa.amb",
+        "Gmax_275_v2.0.fa.bwt",
+        "Gmax_275_v2.0.fa.ann",
+        "Gmax_275_v2.0.fa.pac",
+        "chromosome.txt",
+        "20180321-083514-All.vcf",
+        "software.tar.gz",
+        "Gmax_275_v2.0.dict",
+        "Gmax_275_v2.0.fa.fai"
+      ],
+      "outs": [
+        "20180321-083514-All.vcf_indel_only.vcf"
+      ],
+      "executable": "gatk-wrapper",
+      "args": [
+        "-T",
+        "SelectVariants",
+        "-nt",
+        "2",
+        "-R",
+        "Gmax_275_v2.0.fa",
+        "-selectType",
+        "INDEL",
+        "-V",
+        "20180321-083514-All.vcf",
+        "-o",
+        "20180321-083514-All.vcf_indel_only.vcf"
+      ],
+      "image": "hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf",
+      "workflow": "soykb",
+      "jobId": 0,
+      "setId": 117
+    },
+    {
+      "name": "select_variants_indel",
+      "function": "{{function}}",
+      "type": "dataflow",
+      "firingLimit": 1,
+      "ins": [
+        "Gmax_275_v2.0.fa.sa",
+        "Gmax_275_v2.0.fa",
+        "Gmax_275_v2.0.fa.amb",
+        "Gmax_275_v2.0.fa.bwt",
+        "Gmax_275_v2.0.fa.ann",
+        "Gmax_275_v2.0.fa.pac",
+        "chromosome.txt",
+        "20180321-083514-All.vcf",
+        "software.tar.gz",
+        "Gmax_275_v2.0.dict",
+        "Gmax_275_v2.0.fa.fai"
+      ],
+      "outs": [
+        "20180321-083514-All.vcf_indel_only.vcf"
+      ],
+      "executable": "gatk-wrapper",
+      "args": [
+        "-T",
+        "SelectVariants",
+        "-nt",
+        "2",
+        "-R",
+        "Gmax_275_v2.0.fa",
+        "-selectType",
+        "INDEL",
+        "-V",
+        "20180321-083514-All.vcf",
+        "-o",
+        "20180321-083514-All.vcf_indel_only.vcf"
+      ],
+      "image": "hyperflowwms/soykb-workflow-worker:v1.0.10-1-g95b7caf",
+      "workflow": "soykb",
+      "jobId": 1,
+      "setId": 117
+    }
+  ],
+  [
+    {
       "name": "filtering_indel",
       "function": "{{function}}",
       "type": "dataflow",

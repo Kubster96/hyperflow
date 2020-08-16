@@ -5,45 +5,6 @@ const k8s = require('@kubernetes/client-node');
 var submitK8sJob = require('./k8sJobSubmit.js').submitK8sJob;
 var fs = require('fs');
 const PromisePool = require('@supercharge/promise-pool');
-var path = require('path');
-
-function copyFileSync( source, target ) {
-
-  var targetFile = target;
-
-  //if target is a directory a new file with the same name will be created
-  if ( fs.existsSync( target ) ) {
-    if ( fs.lstatSync( target ).isDirectory() ) {
-      targetFile = path.join( target, path.basename( source ) );
-    }
-  }
-
-  fs.writeFileSync(targetFile, fs.readFileSync(source));
-}
-
-function copyFolderRecursiveSync( source, target ) {
-  var files = [];
-
-  //check if folder needs to be created or integrated
-  var targetFolder = path.join( target, path.basename( source ) );
-  if ( !fs.existsSync( targetFolder ) ) {
-    fs.mkdirSync( targetFolder );
-  }
-
-  //copy
-  if ( fs.lstatSync( source ).isDirectory() ) {
-    files = fs.readdirSync( source );
-    files.forEach( function ( file ) {
-      var curSource = path.join( source, file );
-      if ( fs.lstatSync( curSource ).isDirectory() ) {
-        copyFolderRecursiveSync( curSource, targetFolder );
-      } else {
-        copyFileSync( curSource, targetFolder );
-      }
-    } );
-  }
-}
-
 
 async function bojK8sCommand(ins, outs, context, cb) {
   let functionStart = Date.now();
@@ -64,7 +25,7 @@ async function bojK8sCommand(ins, outs, context, cb) {
     }
   }
 
-  const text = fs.readFileSync("/hyperflow/examples/BagOfJobs/commandType");
+  const text = fs.readFileSync("/hyperflow/examples/BagOfJobs/commandType", { encoding: 'utf8', flag: 'r' });
 
   if (text.startsWith("bagOfJobs")) {
     const kubeconfig = new k8s.KubeConfig();
@@ -77,9 +38,10 @@ async function bojK8sCommand(ins, outs, context, cb) {
 
     // get all nodes
     const nodesResponse = await k8sApi.listNode('default');
-    const nodes = nodesResponse.body.items;
+    const nodes = nodesResponse.body.items.filter(node => node.metadata.labels['nodetype'] === 'worker');
+
     const numberOfNodes = nodes.length;
-    const LABEL = "my-label";
+    const LABEL = "bag-of-jobs-label";
     const headers = {'content-type': 'application/merge-patch+json'};
 
     // create node selector label for all nodes
@@ -93,19 +55,17 @@ async function bojK8sCommand(ins, outs, context, cb) {
       await k8sApi.patchNode(node.metadata.name, label, undefined, undefined, undefined, undefined, {headers});
     }
 
-    copyFolderRecursiveSync('/work_dir', "/hyperflow/examples/BagOfJobs");
-
     // run job sets in parallel with concurrency limit
     const { results, errors } = await PromisePool
         .for(jobs)
         .withConcurrency(numberOfNodes)
         .process(async jobs => {
-          copyFolderRecursiveSync('/hyperflow/examples/BagOfJobs/work_dir', "/");
           jobPromises = jobs.map(job => {
             let taskId = context.hfId + ":" + job.setId + ":" + job.jobId + ":1"
             let set = parseInt(job.setId);
             let nodeToSchedule = nodes[set%numberOfNodes];
             let nodeSelector = nodeToSchedule.metadata.labels[LABEL];
+            console.log(nodeSelector);
             let customParams = {
               jobName: '.job-sets.' + job.name.replace(/_/g, '-') + '.' + job.setId + '.' + job.jobId,
               labelKey: LABEL,
