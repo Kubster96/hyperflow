@@ -13,19 +13,46 @@ spec:
       - name: test
         image: ${imageName}
         env:
-          - name: HF_VAR_ENABLE_NETHOGS
-            value: "1"
           - name: HF_VAR_WORK_DIR
             value: "/tmp/work_dir"
           - name: HF_VAR_WAIT_FOR_INPUT_FILES
             value: "0"
           - name: HF_VAR_NUM_RETRIES
             value: "1"
+          - name: HF_LOG_NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: HF_LOG_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: HF_LOG_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: HF_LOG_POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          - name: HF_LOG_POD_SERVICE_ACCOUNT
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.serviceAccountName
+          - name: HF_VAR_FS_MONIT_ENABLED
+            value: "0"
+          - name: HF_VAR_FS_MONIT_COMMAND
+            value: "${command}"
+          - name: HF_VAR_FS_MONIT_PATH_PATTERN
+            value: "${volumePath}/*"
         command:
           - "/bin/sh"
           - "-c"
           - >
+            echo "Started copying work_dir";
             cp -R /work_dir /tmp;
+            echo "Finished copying work_dir";
+            rm -f /tmp/work_dir/logs-hf/*;
             ${command};
             exitCode=$?;
             if [ $exitCode -ne 0 ]; then echo "Command ${command} returned exit code. $exitCode. Job fails." ; exit 1 ; else cp /tmp/work_dir/logs-hf/* /work_dir/logs-hf/ ; fi ;
