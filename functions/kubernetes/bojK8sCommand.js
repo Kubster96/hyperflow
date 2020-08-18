@@ -6,6 +6,7 @@ var submitK8sJob = require('./k8sJobSubmit.js').submitK8sJob;
 var fs = require('fs');
 const PromisePool = require('@supercharge/promise-pool');
 const delay = ms => new Promise(res => setTimeout(res, ms));
+const LABEL = "bag-of-jobs-label";
 
 async function getNodeToSchedule(k8sApi, nodeNames) {
   while (true) {
@@ -47,16 +48,15 @@ async function bojK8sCommand(ins, outs, context, cb) {
     kubeconfig.loadFromDefault();
 
     let jobsFileName = ins["jobSetsFile"].data[0];
-    let jobs = JSON.parse(fs.readFileSync(jobsFileName));
+    let jobSets = JSON.parse(fs.readFileSync(jobsFileName));
 
     const k8sApi = kubeconfig.makeApiClient(k8s.CoreV1Api);
 
     // get all nodes
     const nodesResponse = await k8sApi.listNode('default');
     const nodes = nodesResponse.body.items.filter(node => node.metadata.labels['nodetype'] === 'worker');
-    const nodesNames = nodes.map(node => node.metadata.name);
+    const nodeNames = nodes.map(node => node.metadata.name);
 
-    const LABEL = "bag-of-jobs-label";
     const headers = {'content-type': 'application/merge-patch+json'};
 
     // create node selector label for all nodes
@@ -70,97 +70,17 @@ async function bojK8sCommand(ins, outs, context, cb) {
       await k8sApi.patchNode(node.metadata.name, label, undefined, undefined, undefined, undefined, {headers});
     }
 
-    let jobPromises = [];
-
-    for(let jobSetIndex in jobs) {
-      const nodeToSchedule = await getNodeToSchedule(k8sApi, nodesNames);
-      jobPromises.concat(jobs[jobSetIndex].map(job => {
-        let taskId = context.hfId + ":" + job.setId + ":" + job.jobId + ":1";
-        let nodeSelector = nodeToSchedule;
-        console.log("Submitted job " + job.name + " number " + job.jobId + " set " + job.setId + " to node " + nodeSelector);
-        let customParams = {
-          jobName: '.job-sets.' + job.name.replace(/_/g, '-') + '.' + job.setId + '.' + job.jobId,
-          labelKey: LABEL,
-          labelValue: nodeSelector,
-          imageName: job.image,
-          firingLimit: job.firingLimit,
-        };
-        return submitK8sJob(kubeconfig, job, taskId, context, customParams);
-      }));
+    var jobExitCodes = [];
+    for (let jobSetIndex in jobSets) {
+      console.log("iteration", jobSetIndex);
+      const nodeToSchedule = await getNodeToSchedule(k8sApi, nodeNames);
       console.log("JobSet " + jobSetIndex + " scheduled to node " + nodeToSchedule);
+      let exitCodes = submitJobSet(jobSetIndex, jobSets[jobSetIndex], nodeToSchedule, context, kubeconfig);
+      jobExitCodes.push(exitCodes);
       await delay(1000);
     }
-
-    const jobExitCodes = await Promise.all(jobPromises);
-    console.log("Finished workload with exit codes:")
-    console.log(jobExitCodes);
-
-
-    // const numberOfJobs = jobs.length;
-    // let resultsList = [];
-    // let errorsList = [];
-    // let executedJobsCounter = 0;
-    //
-    // while(executedJobsCounter < numberOfJobs) {
-    //   const jobsToExecute = jobs.slice(executedJobsCounter, executedJobsCounter + numberOfNodes < numberOfJobs ? executedJobsCounter + numberOfNodes : numberOfJobs);
-    //
-    //   const { results, errors } = await PromisePool
-    //       .for(jobsToExecute)
-    //       .withConcurrency(numberOfNodes)
-    //       .process(async jobs => {
-    //         jobPromises = jobs.map(job => {
-    //           let taskId = context.hfId + ":" + job.setId + ":" + job.jobId + ":1"
-    //           let set = parseInt(job.setId);
-    //           let nodeToSchedule = nodes[set%numberOfNodes];
-    //           let nodeSelector = nodeToSchedule.metadata.labels[LABEL];
-    //           console.log("Submitted job " + job.name + " number " + job.jobId + " set " + job.setId + " to node " + nodeSelector);
-    //           let customParams = {
-    //             jobName: '.job-sets.' + job.name.replace(/_/g, '-') + '.' + job.setId + '.' + job.jobId,
-    //             labelKey: LABEL,
-    //             labelValue: nodeSelector,
-    //             imageName: job.image,
-    //             firingLimit: job.firingLimit,
-    //           };
-    //
-    //           return submitK8sJob(kubeconfig, job, taskId, context, customParams);
-    //         });
-    //         jobExitCodes = await Promise.all(jobPromises);
-    //         return jobExitCodes;
-    //       });
-    //
-    //   resultsList.push(results);
-    //   errorsList.push(errors);
-    //   executedJobsCounter+=numberOfNodes;
-    // }
-
-    // console.log(resultsList, errorsList);
-
-    // run job sets in parallel with concurrency limit
-    // const { results, errors } = await PromisePool
-    //     .for(jobs)
-    //     .withConcurrency(numberOfNodes)
-    //     .process(async jobs => {
-    //       jobPromises = jobs.map(job => {
-    //         let taskId = context.hfId + ":" + job.setId + ":" + job.jobId + ":1"
-    //         let set = parseInt(job.setId);
-    //         let nodeToSchedule = nodes[set%numberOfNodes];
-    //         let nodeSelector = nodeToSchedule.metadata.labels[LABEL];
-    //         console.log("Submitted job " + job.name + " number " + job.jobId + " set " + job.setId + " to node " + nodeSelector);
-    //         let customParams = {
-    //           jobName: '.job-sets.' + job.name.replace(/_/g, '-') + '.' + job.setId + '.' + job.jobId,
-    //           labelKey: LABEL,
-    //           labelValue: nodeSelector,
-    //           imageName: job.image,
-    //           firingLimit: job.firingLimit,
-    //         };
-    //
-    //         return submitK8sJob(kubeconfig, job, taskId, context, customParams);
-    //       });
-    //       jobExitCodes = await Promise.all(jobPromises);
-    //       return jobExitCodes;
-    //     });
-    //
-    // console.log(results, errors);
+    let codes = await Promise.all(jobExitCodes);
+    console.log(JSON.stringify(codes));
   } else {
     let stepsFileName = ins["jobSetsFile"].data[1];
     let steps = JSON.parse(fs.readFileSync(stepsFileName));
@@ -179,7 +99,6 @@ async function bojK8sCommand(ins, outs, context, cb) {
           type: job.name + "-" + job.workflow + "-" + job.size,
           size: 100
         };
-
         return submitK8sJob(kubeconfig, job, taskId, context, customParams);
       }));
 
@@ -194,6 +113,26 @@ async function bojK8sCommand(ins, outs, context, cb) {
   let functionEnd = Date.now();
   console.log("[DEBUG] bojK8sInvoke exiting, time:", functionEnd);
   cb(null, outs);
+}
+
+async function submitJobSet(jobSetIndex, jobSet, nodeToSchedule, context, kubeconfig) {
+  var jobPromises = [];
+  jobPromises = (jobSet.map(job => {
+    let taskId = context.hfId + ":" + job.setId + ":" + job.jobId + ":1";
+    let nodeSelector = nodeToSchedule;
+    console.log("Submitted job " + job.name + " number " + job.jobId + " set " + job.setId + " to node " + nodeSelector);
+    let customParams = {
+      jobName: '.job-sets.' + job.name.replace(/_/g, '-') + '.' + job.setId + '.' + job.jobId,
+      labelKey: LABEL,
+      labelValue: nodeSelector,
+      imageName: job.image,
+      firingLimit: job.firingLimit,
+    };
+    return submitK8sJob(kubeconfig, job, taskId, context, customParams);
+  }));
+  const jobExitCodes = await Promise.all(jobPromises);
+  console.log("Finished job set", jobSetIndex, "exit codes: " + jobExitCodes);
+  return jobExitCodes;
 }
 
 function wait(ms){
