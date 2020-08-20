@@ -3,6 +3,7 @@ kind: Job
 metadata:
   name: job${jobName}
 spec:
+  backoffLimit: 0
   template:
     spec:
       restartPolicy: Never
@@ -14,7 +15,7 @@ spec:
         image: ${imageName}
         env:
           - name: HF_VAR_WORK_DIR
-            value: "/tmp/work_dir"
+            value: "/workflow-data"
           - name: HF_VAR_WAIT_FOR_INPUT_FILES
             value: "0"
           - name: HF_VAR_NUM_RETRIES
@@ -49,21 +50,48 @@ spec:
           - "/bin/sh"
           - "-c"
           - >
-            echo "Started copying work_dir";
-            cp -R /work_dir /tmp;
-            echo "Finished copying work_dir";
-            rm -f /tmp/work_dir/logs-hf/*;
+            while [ ! -d /workflow-data ] ; do "Waiting for /workflow-data to be created" ; sleep 1 ; done ;
+            while [ -z "$(ls -A /workflow-data)" ]; do echo "Waiting for /workflow-data to be mounted" ; sleep 1 ; done ;
+            mkdir /workflow-data/logs-hf;
             ${command};
             exitCode=$?;
-            if [ $exitCode -ne 0 ]; then echo "Command ${command} returned exit code. $exitCode. Job fails." ; exit 1 ; else cp /tmp/work_dir/logs-hf/* /work_dir/logs-hf/ ; fi ;
+            if [ $exitCode -ne 0 ]; then echo "Command ${command} returned exit code. $exitCode. Job fails." ; exit 1 ; else cp /workflow-data/logs-hf/* /work_dir/logs-hf/ ; fi ;
+            echo "Job finished";
+            touch /workflow-data/jobDone;
         workingDir: ${volumePath}
         resources:
           requests:
             cpu: ${cpuRequest}
             memory: ${memRequest}
         volumeMounts:
+        - name: workflow-data
+          mountPath: "/workflow-data:shared"
         - name: my-pvc-nfs
           mountPath: ${volumePath}
+      - name: workflow-data
+        image: kubster96/hyperflowworkflowdata:soykb-post-workflow-data-latest
+        command:
+          - "/bin/sh"
+          - "-c"
+          - >
+            mount -o bind /data /workflow-data ;
+            while [ ! -f /workflow-data/jobDone ]; do echo "Waiting for job to be done" ; sleep 1 ; done ;
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+              - SYS_ADMIN
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                - "sh"
+                - "-c"
+                - >
+                  umount -fl /workflow-data;
+        volumeMounts:
+          - mountPath: /workflow-data:shared
+            name: workflow-data
       volumes:
       - name: workflow-data
         emptyDir: {}
