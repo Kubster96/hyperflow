@@ -8,17 +8,25 @@ const PromisePool = require('@supercharge/promise-pool');
 const delay = ms => new Promise(res => setTimeout(res, ms));
 const LABEL = "bag-of-jobs-label";
 
-async function getNodeToSchedule(k8sApi, nodeNames) {
-  while (true) {
-    const podsResponse = await k8sApi.listNamespacedPod('default');
-    const usedNodeNames = podsResponse.body.items.filter(pod => pod.metadata.name.startsWith("job.job-sets")).filter(pod => pod.status.phase !== 'Succeeded').map(pod => pod.spec.nodeName);
-    const notUsedNodesNames = nodeNames.filter(nodeName => usedNodeNames.indexOf(nodeName) === -1);
+// async function getNodeToSchedule(k8sApi, nodeNames) {
+//   while (true) {
+//     const podsResponse = await k8sApi.listNamespacedPod('default');
+//     const usedNodeNames = podsResponse.body.items.filter(pod => pod.metadata.name.startsWith("job.job-sets")).filter(pod => pod.status.phase !== 'Succeeded' && pod.status.phase !== 'Failed').map(pod => pod.spec.nodeName);
+//     const notUsedNodesNames = nodeNames.filter(nodeName => usedNodeNames.indexOf(nodeName) === -1);
+//
+//     if (notUsedNodesNames.length === 0) {
+//       await delay(5000);
+//     } else {
+//       return notUsedNodesNames[0];
+//     }
+//   }
+// }
 
-    if (notUsedNodesNames.length === 0) {
-      await delay(5000);
-    } else {
-      return notUsedNodesNames[0];
-    }
+async function getNodeToSchedule(jobSetIdx, availNodes) {
+  while(true) {
+    let nodeIndex = availNodes.indexOf(1);
+    if (nodeIndex != -1) { console.log("Job set", jobSetIdx + ": assigning node", nodeIndex); return nodeIndex; }
+    await delay(5000);
   }
 }
 
@@ -56,6 +64,9 @@ async function bojK8sCommand(ins, outs, context, cb) {
     const nodesResponse = await k8sApi.listNode('default');
     const nodes = nodesResponse.body.items.filter(node => node.metadata.labels['nodetype'] === 'worker');
     const nodeNames = nodes.map(node => node.metadata.name);
+    const availNodes = nodeNames.map(node  => 1);
+    console.log(availNodes);
+    console.log("Nodes: " + availNodes);
 
     const headers = {'content-type': 'application/merge-patch+json'};
 
@@ -73,9 +84,12 @@ async function bojK8sCommand(ins, outs, context, cb) {
     var jobExitCodes = [];
     for (let jobSetIndex in jobSets) {
       console.log("iteration", jobSetIndex);
-      const nodeToSchedule = await getNodeToSchedule(k8sApi, nodeNames);
+      const nodeIndex = await getNodeToSchedule(k8sApi, availNodes);
+      const nodeToSchedule = nodeNames[nodeIndex];
       console.log("JobSet " + jobSetIndex + " scheduled to node " + nodeToSchedule);
-      let exitCodes = submitJobSet(jobSetIndex, jobSets[jobSetIndex], nodeToSchedule, context, kubeconfig);
+      availNodes[nodeIndex] = 0;
+      console.log("Node(" + nodeIndex + ") reserved: " + availNodes);
+      let exitCodes = submitJobSet(jobSetIndex, jobSets[jobSetIndex], nodeToSchedule, context, kubeconfig, availNodes, nodeIndex);
       jobExitCodes.push(exitCodes);
       await delay(1000);
     }
@@ -115,7 +129,7 @@ async function bojK8sCommand(ins, outs, context, cb) {
   cb(null, outs);
 }
 
-async function submitJobSet(jobSetIndex, jobSet, nodeToSchedule, context, kubeconfig) {
+async function submitJobSet(jobSetIndex, jobSet, nodeToSchedule, context, kubeconfig, availNodes, nodeIndex) {
   var jobPromises = [];
   jobPromises = (jobSet.map(job => {
     let taskId = context.hfId + ":" + job.setId + ":" + job.jobId + ":1";
@@ -131,6 +145,8 @@ async function submitJobSet(jobSetIndex, jobSet, nodeToSchedule, context, kubeco
     return submitK8sJob(kubeconfig, job, taskId, context, customParams);
   }));
   const jobExitCodes = await Promise.all(jobPromises);
+  availNodes[nodeIndex] = 1;
+  console.log("Node(" + nodeIndex + ") released: " + availNodes);
   console.log("Finished job set", jobSetIndex, "exit codes: " + jobExitCodes);
   return jobExitCodes;
 }
