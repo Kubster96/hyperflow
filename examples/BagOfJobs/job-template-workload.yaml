@@ -2,39 +2,100 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: job${jobName}
-  annotations:
-    type: "${type}"
-    size: "${size}"
 spec:
+  backoffLimit: 0
   template:
+    metadata:
+      annotations:
+        type: "${type}"
+        size: "${size}"
     spec:
+      schedulerName: "${schedulerName}"
       restartPolicy: Never
+      nodeSelector:
+        nodetype: worker
       containers:
         - name: test
           image: ${imageName}
           env:
-            - name: HF_VAR_ENABLE_NETHOGS
-              value: "1"
             - name: HF_VAR_WORK_DIR
-              value: "${volumePath}"
+              value: "/workflow-data"
             - name: HF_VAR_WAIT_FOR_INPUT_FILES
               value: "0"
             - name: HF_VAR_NUM_RETRIES
               value: "1"
+            - name: HF_LOG_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: HF_LOG_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HF_LOG_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: HF_LOG_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: HF_LOG_POD_SERVICE_ACCOUNT
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.serviceAccountName
+            - name: HF_VAR_FS_MONIT_ENABLED
+              value: "0"
+            - name: HF_VAR_FS_MONIT_COMMAND
+              value: "${command}"
+            - name: HF_VAR_FS_MONIT_PATH_PATTERN
+              value: "${volumePath}/*"
           command:
             - "/bin/sh"
             - "-c"
             - >
-              ${command}; exitCode=$? ;
-              if [ $exitCode -ne 0 ]; then echo "Command ${command} returned exit code. $exitCode. Job fails." ; exit 1 ; fi ;
+              while [ ! -d /workflow-data ] ; do "Waiting for /workflow-data to be created" ; sleep 1 ; done ;
+              while [ -z "$(ls -A /workflow-data)" ]; do echo "Waiting for /workflow-data to be mounted" ; sleep 1 ; done ;
+              mkdir /workflow-data/logs-hf;
+              ${command};
+              exitCode=$?;
+              if [ $exitCode -ne 0 ]; then echo "Command ${command} returned exit code. $exitCode. Job fails." ; exit 1 ; else cp /workflow-data/logs-hf/* /work_dir/logs-hf/ ; fi ;
+              echo "Job finished";
+              touch /workflow-data/jobDone;
           workingDir: ${volumePath}
           resources:
             requests:
               cpu: ${cpuRequest}
               memory: ${memRequest}
           volumeMounts:
+            - name: workflow-data
+              mountPath: "/workflow-data:shared"
             - name: my-pvc-nfs
               mountPath: ${volumePath}
+        - name: workflow-data
+          image: kubster96/hyperflowworkflowdata:soykb-post-workflow-data-latest
+          command:
+            - "/bin/sh"
+            - "-c"
+            - >
+              mount -o bind /data /workflow-data ;
+              while [ ! -f /workflow-data/jobDone ]; do echo "Waiting for job to be done" ; sleep 1 ; done ;
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - SYS_ADMIN
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - "sh"
+                  - "-c"
+                  - >
+                    umount -fl /workflow-data;
+          volumeMounts:
+            - mountPath: /workflow-data:shared
+              name: workflow-data
       volumes:
         - name: workflow-data
           emptyDir: {}

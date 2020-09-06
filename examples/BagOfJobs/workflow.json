@@ -13,13 +13,18 @@
 			"stdout": "test.stdout"
 		}
 	},
-        "ins": [ "jobSetsFile" ],
+        "ins": [ "jobSetsFile", "workload" ],
         "outs": [ ]
     } ],
-    "signals": [ {
+    "signals": [
+      {
         "name": "jobSetsFile",
-        "data": [ "job_sets.json", "workload.json" ]
-    } ],
-    "ins": [ "jobSetsFile" ],
+        "data": [ "job_sets.json"]
+      },
+      {
+        "name": "workload",
+        "data": [ "workload.json" ]
+      }],
+    "ins": [ "jobSetsFile", "workload" ],
     "outs": [ ]
 }
