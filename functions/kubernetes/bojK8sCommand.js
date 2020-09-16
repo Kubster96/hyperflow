@@ -101,14 +101,14 @@ async function submitJobStep(stepIndex, step, context, kubeconfig) {
   var jobPromises = [];
   jobs = step.jobs;
   jobPromises = (jobs.map(job => {
-    let taskId = context.hfId + ":" + job.step + ":" + job.job + ":1"
+    let taskId = context.hfId + ":" + context.appId + ":" + job.step + ":" + job.job;
     let customParams = {
       jobName: '.workload.' + job.name.replace(/_/g, '-') + '.' + job.step + '.' + job.job,
       imageName: job.image,
       firingLimit: job.firingLimit,
       type: job.name + "-" + job.workflow + "-" + job.size,
       size: 100,
-      schedulerName: "collocation-scheduler"
+      schedulerName: "normal-scheduler"
     };
     return submitK8sJob(kubeconfig, job, taskId, context, customParams);
   }));

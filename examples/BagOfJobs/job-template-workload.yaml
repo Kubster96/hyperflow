@@ -46,10 +46,14 @@ spec:
                   fieldPath: spec.serviceAccountName
             - name: HF_VAR_FS_MONIT_ENABLED
               value: "0"
-            - name: HF_VAR_FS_MONIT_COMMAND
-              value: "${command}"
+#            - name: HF_VAR_FS_MONIT_COMMAND
+#              value: "${command}"
             - name: HF_VAR_FS_MONIT_PATH_PATTERN
               value: "${volumePath}/*"
+            - name: HF_VAR_COLLOCATION_TYPE
+              value: "${type}"
+            - name: HF_VAR_COLLOCATION_SIZE
+              value: "${size}"
           command:
             - "/bin/sh"
             - "-c"
@@ -73,7 +77,7 @@ spec:
             - name: my-pvc-nfs
               mountPath: ${volumePath}
         - name: workflow-data
-          image: kubster96/hyperflowworkflowdata:soykb-post-workflow-data-latest
+          image: kubster96/hyperflowworkflowdata:montage-soykb-post-workflow-data-latest
           command:
             - "/bin/sh"
             - "-c"
